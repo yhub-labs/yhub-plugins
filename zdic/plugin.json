@@ -1,0 +1,90 @@
+{
+  "schema": 2,
+  "id": "zdic",
+  "name": "@name",
+  "icon": "zdic",
+  "description": "@description",
+  "keywords": "zdic handian hd zd 字典 查字 释义 拼音 部首",
+  "kind": "third-party",
+  "trust": "full",
+  "enable": {
+    "default": true
+  },
+  "faces": {
+    "routes": [
+      {
+        "method": "GET",
+        "path": "/api/zdic",
+        "handler": "zdic_route",
+        "params": [
+          {
+            "name": "q",
+            "type": "str",
+            "required": true,
+            "help": "@param.q"
+          },
+          {
+            "name": "traditional",
+            "type": "bool",
+            "default": false,
+            "help": "@param.traditional"
+          }
+        ]
+      }
+    ],
+    "mcp": [
+      {
+        "name": "zdic_lookup",
+        "description": "@mcp.lookup",
+        "handler": "mcp_lookup",
+        "params": [
+          {
+            "name": "word",
+            "type": "str",
+            "help": "@param.word"
+          },
+          {
+            "name": "traditional",
+            "type": "bool",
+            "default": false,
+            "help": "@param.traditional"
+          }
+        ]
+      }
+    ],
+    "cli": {
+      "command": "zdic",
+      "help": "@cli.help",
+      "params": [
+        {
+          "name": "words",
+          "type": "str",
+          "nargs": "*",
+          "positional": true,
+          "help": "@param.words"
+        },
+        {
+          "name": "traditional",
+          "type": "bool",
+          "default": false,
+          "short": "t",
+          "help": "@param.traditional"
+        },
+        {
+          "name": "links",
+          "type": "bool",
+          "default": false,
+          "short": "l",
+          "help": "@param.links"
+        }
+      ],
+      "handler": "cli_main"
+    }
+  },
+  "version": "0.1.3",
+  "min_yhub": "0.1.2",
+  "license": "MIT",
+  "presentation": {
+    "panel": "panel/index.html"
+  }
+}

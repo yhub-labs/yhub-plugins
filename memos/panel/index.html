@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memos</title>
+<!--
+  Memos panel — one self-contained file, no build step.
+
+  The host serves this at /api/plugins/memos/panel inside an iframe (presentation.panel in
+  plugin.json), so nothing here may import the host's React tree. The contract is the HTTP API the
+  plugin already exposes: GET /api/memos?day=…, POST /api/memos, GET /api/memos/config.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --fg: #1c1c1e; --muted: #6b7280; --line: #d1d5db; --card: #ffffff;
+    --accent: #2563eb; --chip: #f3f4f6; --danger: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e5e7eb; --muted: #9ca3af; --line: #374151; --card: #1f2937; --accent: #60a5fa; --chip: #111827; --danger: #f87171; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; color: var(--fg);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", system-ui, sans-serif; }
+  body { padding: 4px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .days { display: flex; gap: 6px; }
+  .days button { background: transparent; border: 1px solid var(--line); color: var(--muted);
+    padding: 5px 10px; border-radius: 999px; font-size: 13px; cursor: pointer; }
+  .days button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .spacer { flex: 1 1 auto; }
+  .count { color: var(--muted); font-size: 13px; }
+  textarea { width: 100%; min-height: 64px; margin-top: 10px; padding: 9px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--card); color: var(--fg); font: inherit; resize: vertical; }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  button.primary { background: var(--accent); color: #fff; border: 1px solid transparent;
+    padding: 7px 14px; border-radius: 8px; font-size: 14px; cursor: pointer; }
+  button.primary[disabled] { opacity: .55; cursor: default; }
+  ul.list { list-style: none; margin: 14px 0 0; padding: 0; }
+  ul.list li { padding: 10px 0; border-top: 1px solid var(--line); }
+  .time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .body { margin: 3px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .tags { margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag { background: var(--chip); border-radius: 999px; padding: 1px 8px; font-size: 12px; color: var(--muted); }
+  .state { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+  .state strong { display: block; margin-bottom: 4px; }
+  .state.error { border-color: var(--danger); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor;
+    border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -1px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="days" id="days"></div>
+    <span class="spacer"></span>
+    <span class="count" id="count"></span>
+  </div>
+
+  <textarea id="content"></textarea>
+  <div class="actions">
+    <button class="primary" id="post"></button>
+    <span class="muted" id="status"></span>
+  </div>
+
+  <div id="out"></div>
+
+<script>
+const STRINGS = {
+  en: {
+    today: 'Today', yesterday: 'Yesterday', all: 'All',
+    placeholder: 'Write something… (⌘↵ to post)', post: 'Post', posting: 'Posting…',
+    empty: 'Nothing here yet.', count: '{n} memos', countOne: '1 memo',
+    notConfigured: 'Memos is not configured',
+    notConfiguredHint: 'Fill in instance and token on the Y-Hub settings page, or run `yhub memos auth`.',
+    failed: 'Memos request failed', reload: 'Reload',
+  },
+  'zh-CN': {
+    today: '今天', yesterday: '昨天', all: '全部',
+    placeholder: '写点什么…（⌘↵ 发布）', post: '发布', posting: '发布中…',
+    empty: '这一天还没有记录。', count: '{n} 条', countOne: '1 条',
+    notConfigured: '还没有配置 memos 认证',
+    notConfiguredHint: '在 Y-Hub 设置页填入 instance 与 token，或运行 `yhub memos auth`。',
+    failed: 'memos 请求失败', reload: '重试',
+  },
+};
+let lang = 'en';
+const t = (key, vars = {}) => {
+  const table = STRINGS[lang] || STRINGS.en;
+  return (table[key] || STRINGS.en[key] || key).replace(/\{(\w+)\}/g, (_, k) => (k in vars ? vars[k] : `{${k}}`));
+};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let day = 'today';
+let busy = false;
+
+function paint() {
+  $('content').placeholder = t('placeholder');
+  $('post').textContent = t('post');
+  document.querySelectorAll('#days button').forEach((b) => {
+    b.textContent = t(b.dataset.day);
+    b.setAttribute('aria-pressed', String(b.dataset.day === day));
+  });
+}
+
+function stateBox(kind, title, hint) {
+  return `<div class="state ${kind}"><strong>${esc(title)}</strong>${hint ? `<span class="muted">${esc(hint)}</span>` : ''}</div>`;
+}
+
+async function loadConfig() {
+  const res = await fetch('/api/memos/config');
+  const body = await res.json().catch(() => ({}));
+  return body.config || {};
+}
+
+async function loadList() {
+  $('out').innerHTML = stateBox('', `<span class="spinner"></span>`, '');
+  try {
+    const res = await fetch(`/api/memos?day=${encodeURIComponent(day)}&limit=200`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body.ok === false) {
+      $('count').textContent = '';
+      $('out').innerHTML = stateBox('error', body.error || t('failed'), body.hint || '');
+      return;
+    }
+    render(body.items || [], body.count ?? (body.items || []).length);
+  } catch (e) {
+    $('out').innerHTML = stateBox('error', t('failed'), String(e));
+  }
+}
+
+function render(items, count) {
+  $('count').textContent = count === 1 ? t('countOne') : t('count', { n: count });
+  if (!items.length) {
+    $('out').innerHTML = `<p class="muted" style="margin-top:14px">${esc(t('empty'))}</p>`;
+    return;
+  }
+  const rows = items.map((m) => {
+    const tags = (m.tags || []).map((tag) => `<span class="tag">${esc(tag)}</span>`).join('');
+    return `<li><div class="time">${esc(m.time || '')}</div>
+      <div class="body">${esc(m.content || m.preview || '')}</div>
+      ${tags ? `<div class="tags">${tags}</div>` : ''}</li>`;
+  }).join('');
+  $('out').innerHTML = `<ul class="list">${rows}</ul>`;
+}
+
+async function post() {
+  const content = $('content').value.trim();
+  if (busy || !content) return;
+  busy = true;
+  $('post').disabled = true;
+  $('status').textContent = t('posting');
+  try {
+    const res = await fetch('/api/memos', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body.ok === false) {
+      $('status').textContent = '';
+      $('out').innerHTML = stateBox('error', body.error || t('failed'), body.hint || '');
+      return;
+    }
+    $('content').value = '';
+    $('status').textContent = '';
+    day = 'today';
+    paint();
+    await loadList();
+  } catch (e) {
+    $('status').textContent = '';
+    $('out').innerHTML = stateBox('error', t('failed'), String(e));
+  } finally {
+    busy = false;
+    $('post').disabled = false;
+  }
+}
+
+for (const name of ['today', 'yesterday', 'all']) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.day = name;
+  button.addEventListener('click', () => { day = name; paint(); loadList(); });
+  $('days').appendChild(button);
+}
+$('post').addEventListener('click', post);
+$('content').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); post(); }
+});
+
+/**
+ * Adopt a language without a reload. The workbench keeps this frame mounted when the user switches
+ * language, so it announces the change through `localStorage['yhub.lang']` (same origin → a `storage`
+ * event lands here). The list is re-fetched because its count label and empty state are ours.
+ */
+function applyLang(code) {
+  if (code !== 'en' && code !== 'zh-CN') return;
+  lang = code;
+  document.documentElement.lang = lang;
+  paint();
+  loadList();
+}
+window.addEventListener('storage', (e) => {
+  if (e.key === 'yhub.lang') applyLang(e.newValue);
+});
+
+(async () => {
+  try {
+    // /api/settings answers { ok, path, settings: {…} } — the language lives one level down.
+    const res = await fetch('/api/settings');
+    const payload = await res.json();
+    const settings = payload.settings || payload;
+    lang = String(settings.ui_language || '').toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
+  } catch { lang = navigator.language.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'; }
+  document.documentElement.lang = lang;
+  paint();
+
+  const config = await loadConfig();
+  if (config.configured === false) {
+    $('count').textContent = '';
+    $('out').innerHTML = stateBox('error', t('notConfigured'), t('notConfiguredHint'));
+    $('post').disabled = true;
+    return;
+  }
+  const params = new URLSearchParams(location.search);
+  if (params.get('day')) day = params.get('day');
+  paint();
+  await loadList();
+})();
+</script>
+</body>
+</html>

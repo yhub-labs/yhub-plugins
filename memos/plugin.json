@@ -1,0 +1,161 @@
+{
+  "schema": 2,
+  "id": "memos",
+  "name": "@name",
+  "icon": "memos",
+  "description": "@description",
+  "keywords": "memos suishou jilu rizhi note 笔记 随手记",
+  "kind": "third-party",
+  "trust": "full",
+  "enable": {
+    "default": true
+  },
+  "faces": {
+    "routes": [
+      {
+        "method": "GET",
+        "path": "/api/memos/config",
+        "handler": "_memos_config_get",
+        "params": []
+      },
+      {
+        "method": "POST",
+        "path": "/api/memos/config",
+        "handler": "_memos_config_save",
+        "params": [
+          {
+            "name": "payload",
+            "in": "body",
+            "fields": [
+              {
+                "name": "instance",
+                "type": "str",
+                "help": "@param.instance"
+              },
+              {
+                "name": "token",
+                "type": "str",
+                "help": "@param.token"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/api/memos",
+        "handler": "_memos_list",
+        "params": [
+          {
+            "name": "day",
+            "type": "str",
+            "default": "today",
+            "help": "@param.day"
+          },
+          {
+            "name": "limit",
+            "type": "int",
+            "default": 100,
+            "ge": 1,
+            "le": 500
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/api/memos",
+        "handler": "_memos_create",
+        "params": [
+          {
+            "name": "payload",
+            "in": "body",
+            "fields": [
+              {
+                "name": "content",
+                "type": "str",
+                "help": "@param.content"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "mcp": [
+      {
+        "name": "memos_list",
+        "description": "@mcp.list",
+        "handler": "list_memos",
+        "params": [
+          {
+            "name": "day",
+            "type": "str",
+            "default": "today",
+            "help": "@param.day"
+          },
+          {
+            "name": "limit",
+            "type": "int",
+            "default": 100
+          }
+        ]
+      },
+      {
+        "name": "memos_create",
+        "description": "@mcp.create",
+        "handler": "create_memo",
+        "params": [
+          {
+            "name": "content",
+            "type": "str",
+            "help": "@param.content"
+          }
+        ]
+      }
+    ],
+    "cli": {
+      "command": "memos",
+      "help": "@cli.help",
+      "subcommands": [
+        {
+          "name": "auth",
+          "help": "@cli.auth",
+          "params": [],
+          "handler": "_cli_auth"
+        },
+        {
+          "name": "new",
+          "help": "@cli.new",
+          "params": [
+            {
+              "name": "content",
+              "type": "str",
+              "nargs": "+",
+              "positional": true,
+              "help": "@param.content"
+            }
+          ],
+          "handler": "_cli_new"
+        },
+        {
+          "name": "list",
+          "help": "@cli.list",
+          "params": [
+            {
+              "name": "day",
+              "type": "str",
+              "positional": true,
+              "help": "@param.day"
+            }
+          ],
+          "handler": "_cli_list"
+        }
+      ]
+    }
+  },
+  "version": "0.1.3",
+  "min_yhub": "0.1.3",
+  "license": "MIT",
+  "presentation": {
+    "panel": "panel/index.html"
+  }
+}

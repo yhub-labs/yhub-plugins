@@ -1,0 +1,21 @@
+{
+  "name": "汉典",
+  "description": "查字词读音、部首笔画与释义",
+  "param.q": "要查的字或词",
+  "param.word": "要查的字或词",
+  "param.words": "要查的字或词（可多个，缺省读 stdin）",
+  "param.traditional": "走繁体路径",
+  "param.links": "未收录时列出搜索结果链接",
+  "mcp.lookup": "查询汉字或词语的读音、部首、笔画、释义（数据来自 zdic.net）",
+  "cli.help": "查字词读音与释义（汉典）",
+  "err.hint.network": "检查网络是否能访问 zdic.net",
+  "err.need_word": "请输入要查的字或词",
+  "err.http": "zdic.net 返回 HTTP {status}",
+  "err.network": "访问 zdic.net 失败：{reason}",
+  "cli.not_found": "✗ 汉典未收录：{word}",
+  "cli.try": "  试试：{url}",
+  "cli.search_results": "  搜索结果：{items}",
+  "cli.error": "  错误：{message}",
+  "cli.definitions": "  释义",
+  "cli.english": "  英译 {text}"
+}

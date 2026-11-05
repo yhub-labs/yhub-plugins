@@ -1,0 +1,21 @@
+{
+  "name": "Zdic",
+  "description": "Pronunciation, radicals, stroke counts and definitions for Chinese characters and words",
+  "param.q": "Character or word to look up",
+  "param.word": "Character or word to look up",
+  "param.words": "Characters or words to look up — several allowed; reads stdin when omitted",
+  "param.traditional": "Look up through the traditional-Chinese path",
+  "param.links": "List search-result links when there is no entry",
+  "mcp.lookup": "Look up the pronunciation, radicals, stroke count and definition of a Chinese character or word (data from zdic.net)",
+  "cli.help": "Look up pronunciation and definitions in Zdic",
+  "err.hint.network": "Check that this machine can reach zdic.net",
+  "err.need_word": "Enter a character or word to look up",
+  "err.http": "zdic.net returned HTTP {status}",
+  "err.network": "Failed to reach zdic.net: {reason}",
+  "cli.not_found": "✗ Not in zdic.net: {word}",
+  "cli.try": "  try: {url}",
+  "cli.search_results": "  search results: {items}",
+  "cli.error": "  error: {message}",
+  "cli.definitions": "  definitions",
+  "cli.english": "  English {text}"
+}

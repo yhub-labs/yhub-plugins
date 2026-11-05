@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zdic</title>
+<!--
+  Zdic panel — one self-contained file, no build step.
+
+  The host serves this at /api/plugins/zdic/panel and shows it in an iframe (presentation.panel in
+  plugin.json), so nothing here may import the host's React tree: the only contract is the HTTP API
+  (/api/zdic) plus /api/settings for the UI language. Keeping it one file is what lets a plugin ship
+  its own screen without the host compiling anything.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: transparent;
+    --fg: #1c1c1e; --muted: #6b7280; --line: #d1d5db;
+    --card: #ffffff; --accent: #2563eb; --chip: #f3f4f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e5e7eb; --muted: #9ca3af; --line: #374151; --card: #1f2937; --accent: #60a5fa; --chip: #111827; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", system-ui, sans-serif; }
+  body { padding: 4px; }
+  form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type="text"] { flex: 1 1 12rem; min-width: 0; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--card); color: var(--fg); font-size: 15px; }
+  input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { padding: 8px 14px; border-radius: 8px; border: 1px solid transparent;
+    background: var(--accent); color: #fff; font-size: 14px; cursor: pointer; }
+  button[disabled] { opacity: .55; cursor: default; }
+  label.trad { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+  .hint, .muted { color: var(--muted); font-size: 13px; }
+  .result { margin-top: 14px; }
+  .word { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .word h2 { margin: 0; font-size: 26px; font-weight: 650; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 2px 10px; font-size: 13px; }
+  table.meta { border-collapse: collapse; margin: 10px 0 0; font-size: 13px; }
+  table.meta th { text-align: left; color: var(--muted); font-weight: 500; padding: 2px 12px 2px 0; white-space: nowrap; }
+  table.meta td { padding: 2px 0; }
+  ol.defs { margin: 10px 0 0; padding-left: 20px; }
+  ol.defs li { margin: 3px 0; }
+  a { color: var(--accent); }
+  .error { margin-top: 12px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); }
+  .error strong { display: block; margin-bottom: 4px; }
+  .empty { margin-top: 14px; }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor;
+    border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -1px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <form id="f">
+    <input id="q" type="text" autocomplete="off" spellcheck="false" autofocus>
+    <button id="go" type="submit"></button>
+    <label class="trad"><input id="t" type="checkbox"> <span id="tlabel"></span></label>
+  </form>
+  <div id="hint" class="hint"></div>
+  <div id="out"></div>
+
+<script>
+const STRINGS = {
+  en: {
+    placeholder: 'Type a character or word, press Enter (e.g. 你 / 一鼓作气)',
+    search: 'Look up', searching: 'Looking up…', traditional: 'Trad.',
+    empty: 'Tip: pinyin, radicals, stroke counts, rare characters and archaic senses all come from real Zdic data — this is not something to ask a model.',
+    notFound: 'Zdic has no entry for “{word}”', searchOnZdic: 'Search on Zdic',
+    source: 'Original Zdic entry', english: 'English', definitions: 'Definitions',
+    failed: 'Lookup failed',
+  },
+  'zh-CN': {
+    placeholder: '输入一个字或词，回车查询（例：你 / 一鼓作气）',
+    search: '查询', searching: '查询中…', traditional: '繁',
+    empty: '提示：拼音、部首、笔画、生僻字与古义都来自汉典真实数据 —— 这类信息不该问模型。',
+    notFound: '汉典未收录「{word}」', searchOnZdic: '到汉典搜索',
+    source: '汉典原文', english: '英译', definitions: '释义',
+    failed: '查询失败',
+  },
+};
+let lang = 'en';
+const t = (key, vars = {}) => {
+  const table = STRINGS[lang] || STRINGS.en;
+  return (table[key] || STRINGS.en[key] || key).replace(/\{(\w+)\}/g, (_, k) => (k in vars ? vars[k] : `{${k}}`));
+};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function paint() {
+  $('q').placeholder = t('placeholder');
+  $('go').textContent = t('search');
+  $('tlabel').textContent = t('traditional');
+  if (!lastWord) $('hint').textContent = t('empty');
+}
+function errorBox(message, hint) {
+  return `<div class="error"><strong>${esc(message)}</strong>${hint ? `<span class="muted">${esc(hint)}</span>` : ''}</div>`;
+}
+
+let busy = false;
+let lastWord = '';
+
+async function lookup(word, traditional) {
+  if (busy || !word.trim()) return;
+  busy = true; lastWord = word;
+  $('go').disabled = true;
+  $('go').innerHTML = `<span class="spinner"></span>`;
+  $('hint').textContent = t('searching');
+  $('out').innerHTML = '';
+  try {
+    const url = `/api/zdic?q=${encodeURIComponent(word)}${traditional ? '&traditional=true' : ''}`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body.ok === false) {
+      $('out').innerHTML = errorBox(body.error || t('failed'), body.hint || '');
+    } else {
+      $('out').innerHTML = render(body.result || {});
+    }
+    $('hint').textContent = '';
+  } catch (e) {
+    $('out').innerHTML = errorBox(t('failed'), String(e));
+  } finally {
+    busy = false;
+    $('go').disabled = false;
+    $('go').textContent = t('search');
+  }
+}
+
+function render(r) {
+  if (!r.found) {
+    return `<div class="result"><div class="word"><h2>${esc(r.word)}</h2></div>
+      <p class="muted">${esc(t('notFound', { word: r.word }))}</p>
+      <p><a href="${esc(r.url)}" target="_blank" rel="noreferrer">${esc(t('searchOnZdic'))} ↗</a></p></div>`;
+  }
+  const chips = [r.pinyin, r.zhuyin].filter(Boolean).map((v) => `<span class="chip">${esc(v)}</span>`).join('');
+  const meta = (r.meta || []).map(([label, value]) => `<tr><th>${esc(label)}</th><td>${esc(value)}</td></tr>`).join('');
+  const defs = (r.definitions || []).map((d) => `<li>${esc(d)}</li>`).join('');
+  return `<div class="result">
+    <div class="word"><h2>${esc(r.word)}</h2><div class="chips">${chips}</div></div>
+    ${meta ? `<table class="meta">${meta}</table>` : ''}
+    ${defs ? `<div class="muted" style="margin-top:12px">${esc(t('definitions'))}</div><ol class="defs">${defs}</ol>` : ''}
+    ${r.english ? `<p class="muted">${esc(t('english'))}: ${esc(r.english)}</p>` : ''}
+    <p style="margin-top:12px"><a href="${esc(r.url)}" target="_blank" rel="noreferrer">${esc(t('source'))} ↗</a></p>
+  </div>`;
+}
+
+$('f').addEventListener('submit', (e) => {
+  e.preventDefault();
+  lookup($('q').value, $('t').checked);
+});
+
+/**
+ * Adopt a language without a reload. The workbench keeps this frame mounted when the user switches
+ * language, so it announces the change through `localStorage['yhub.lang']` (same origin → a `storage`
+ * event lands here). Server-rendered labels (the meta table) follow `ui_language`, so an open result
+ * is looked up again; the query itself is kept.
+ */
+function applyLang(code) {
+  if (code !== 'en' && code !== 'zh-CN') return;
+  lang = code;
+  document.documentElement.lang = lang;
+  paint();
+  if (lastWord) lookup(lastWord, $('t').checked);
+}
+window.addEventListener('storage', (e) => {
+  if (e.key === 'yhub.lang') applyLang(e.newValue);
+});
+
+(async () => {
+  try {
+    // /api/settings answers { ok, path, settings: {…} } — the language lives one level down.
+    const res = await fetch('/api/settings');
+    const payload = await res.json();
+    const settings = payload.settings || payload;
+    lang = String(settings.ui_language || '').toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
+  } catch { lang = navigator.language.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'; }
+  document.documentElement.lang = lang;
+  paint();
+
+  // Deep link: ?q=你[&traditional=1] looks the word up on load, so a panel URL can be shared or
+  // bookmarked like the tool's own deep link.
+  const params = new URLSearchParams(location.search);
+  const word = params.get('q') || '';
+  if (word.trim()) {
+    $('q').value = word;
+    $('t').checked = params.get('traditional') === '1';
+    lookup(word, $('t').checked);
+  }
+})();
+</script>
+</body>
+</html>
