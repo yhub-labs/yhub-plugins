@@ -111,10 +111,12 @@ def main() -> int:
         if not str(entry.get("name_zh") or "").strip() or not str(entry.get("description_zh") or "").strip():
             fail(f"{where}: name_zh and description_zh are required — the index is fetched before any locale exists")
         ref = str(entry.get("ref") or "")
-        if not ref:
-            fail(f"{where}: needs `ref` (a tag) — an unpinned entry downloads whatever the default branch is today")
-        elif entry.get("subdir") and ref != f"{pid}-v{version}":
-            fail(f"{where}: ref {ref!r} ≠ tag {pid}-v{version} — plugins in this repository are tagged <id>-v<version>")
+        if entry.get("repo"):
+            # An `archive` entry pins by URL, not by tag; a `repo` entry must name the tag it installs.
+            if not ref:
+                fail(f"{where}: needs `ref` (a tag) — an unpinned entry downloads whatever the default branch is today")
+            elif entry.get("subdir") and ref != f"{pid}-v{version}":
+                fail(f"{where}: ref {ref!r} ≠ tag {pid}-v{version} — plugins in this repository are tagged <id>-v<version>")
         checked += 1
 
     # ---- local drift: entries that live in this repository

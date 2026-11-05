@@ -20,6 +20,9 @@ jobs:
       - name: registry 形状 + 本仓漂移（版本 / min_yhub / ref）
         run: python3 scripts/verify-registry.py
 
+      - name: registry 远端漂移（外部条目按固定 ref 取 plugin.json）
+        run: python3 scripts/verify-registry.py --network
+
       - name: 装宿主
         run: uv tool install "yhub>=0.1.3"
 
