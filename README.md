@@ -36,6 +36,21 @@ An install **by id** from an entry that carries `subdir` needs a host that merge
 `subdir` into the GitHub install path (Y-Hub ≥ 0.1.8; before that it unpacked the repository root and
 refused the wrong plugin). On an older host, name the subdirectory explicitly as above.
 
+## Adding a third-party plugin
+
+Plugins from other people are **not** copied into this repository: they keep their own repository and
+release cycle, and the PR here adds **one entry** to `registry.json` (`repo` + pinned `ref`, plus
+`subdir` only when their repository is itself a monorepo). The index is what `yhub plugin install <id>`
+resolves; the code never leaves the author's repo.
+
+The entry must carry `name_zh`/`description_zh` (the index is fetched before any plugin exists, so the
+Chinese UI can only read them), a real tag, and a `min_yhub` that matches what the plugin actually needs.
+`python3 scripts/verify-registry.py --network` is the gate: it fetches the plugin's `plugin.json` at the
+pinned tag and fails when `version` / `min_yhub` / `id` disagree.
+
+Step-by-step, review criteria and the alternative (hosting the code here) live in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Releasing a plugin
 
 Bump the plugin's `plugin.json`, update its `registry.json` entry (`version`, `min_yhub`, `ref` — all
@@ -70,6 +85,7 @@ the catalog.
 ```bash
 python3 scripts/verify-i18n.py        # locale parity, @keys, t("…") call sites, leftover Chinese, registry
 python3 scripts/verify-registry.py    # entry shape + drift against each plugin.json
+python3 scripts/verify-registry.py --network   # external entries: their plugin.json at the pinned tag
 python3 scripts/verify-host-load.py   # load every plugin into a real host, in both languages
 ```
 
